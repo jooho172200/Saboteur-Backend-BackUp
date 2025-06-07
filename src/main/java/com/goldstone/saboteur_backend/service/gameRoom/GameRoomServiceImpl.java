@@ -28,6 +28,14 @@ public class GameRoomServiceImpl implements GameRoomService {
     @Autowired private final GlobalSession globalSession;
     private final SocketIoService socketIoService;
 
+    public GameRoom getGameRoomById(UUID id) {
+        GameRoom gameRoom = this.globalSession.getGameRoomSession(id);
+        if (gameRoom == null) {
+            throw new BusinessException(GameRoomErrorCode.GAME_ROOM_NOT_FOUND);
+        }
+        return gameRoom;
+    }
+
     @Override
     public GameRoom createGameRoom(CreateGameRoomRequestDto dto) {
         User host = this.globalSession.getUserSession(dto.getUserId());
@@ -53,10 +61,7 @@ public class GameRoomServiceImpl implements GameRoomService {
             throw new BusinessException(UserErrorCode.USER_NOT_FOUND);
         }
 
-        GameRoom gameRoom = this.globalSession.getGameRoomSession(dto.getGameRoomId());
-        if (gameRoom == null) {
-            throw new BusinessException(GameRoomErrorCode.GAME_ROOM_NOT_FOUND);
-        }
+        GameRoom gameRoom = this.getGameRoomById(dto.getGameRoomId());
 
         if (gameRoom.getSetting().getHost() == null) {
             System.out.println("[PROTOTYPE] If host is not set, set user as host.");
@@ -72,11 +77,9 @@ public class GameRoomServiceImpl implements GameRoomService {
         return gameRoom;
     }
 
+    @Override
     public GameRoom startGame(StartGameRequestDto dto) {
-        GameRoom gameRoom = this.globalSession.getGameRoomSession(dto.getGameRoomId());
-        if (gameRoom == null) {
-            throw new BusinessException(GameRoomErrorCode.GAME_ROOM_NOT_FOUND);
-        }
+        GameRoom gameRoom = this.getGameRoomById(dto.getGameRoomId());
         gameRoom.canStartGame(dto.getUserId());
         gameRoom.startGame();
 
@@ -87,10 +90,7 @@ public class GameRoomServiceImpl implements GameRoomService {
 
     /** 라운드 초기화: 역할, 보드, 턴매니저, 카드풀, 카드 분배 등 */
     public void initRound(UUID gameRoomId) {
-        GameRoom gameRoom = this.globalSession.getGameRoomSession(gameRoomId);
-        if (gameRoom == null) {
-            throw new BusinessException(GameRoomErrorCode.GAME_ROOM_NOT_FOUND);
-        }
+        GameRoom gameRoom = this.getGameRoomById(gameRoomId);
 
         // 1. 기존 세션 제거
         globalSession.removeGameBoardSession(gameRoomId);
