@@ -9,6 +9,7 @@ import com.goldstone.saboteur_backend.domain.mapping.UserGameRole;
 import com.goldstone.saboteur_backend.domain.user.User;
 import com.goldstone.saboteur_backend.exception.BusinessException;
 import com.goldstone.saboteur_backend.exception.code.error.CommonErrorCode;
+import com.goldstone.saboteur_backend.service.game.GoldDistributionState;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -32,9 +33,13 @@ public class GlobalSession {
     private final Map<UUID, GoldCardDeck> goldDeckSession = new ConcurrentHashMap<>();
     // Key: Game Room ID
     private final Map<UUID, List<UserGameRole>> roleAssignmentSession = new ConcurrentHashMap<>();
-
-    // userId → socketId 매핑
+    // Key: Game Room ID, userId → socketId 매핑
     private final Map<UUID, UUID> userSocketIdMap = new ConcurrentHashMap<>();
+    // Key: Game Room ID
+    private final Map<UUID, User> goldFinderSession = new ConcurrentHashMap<>();
+    // Key: Game Room ID
+    private final Map<UUID, GoldDistributionState> goldDistributionSession =
+            new ConcurrentHashMap<>();
 
     private <T> T wrapperCall(Supplier<T> action) {
         try {
@@ -129,5 +134,29 @@ public class GlobalSession {
 
     public void removeUserSocketId(UUID userId) {
         userSocketIdMap.remove(userId);
+    }
+
+    public void setGoldFinder(UUID gameRoomId, User user) {
+        wrapperCall(() -> goldFinderSession.put(gameRoomId, user));
+    }
+
+    public User getGoldFinder(UUID gameRoomId) {
+        return wrapperCall(() -> goldFinderSession.get(gameRoomId));
+    }
+
+    public void removeGoldFinder(UUID gameRoomId) {
+        wrapperCall(() -> goldFinderSession.remove(gameRoomId));
+    }
+
+    public void setGoldDistributionState(UUID gameRoomId, GoldDistributionState state) {
+        wrapperCall(() -> goldDistributionSession.put(gameRoomId, state));
+    }
+
+    public GoldDistributionState getGoldDistributionState(UUID gameRoomId) {
+        return wrapperCall(() -> goldDistributionSession.get(gameRoomId));
+    }
+
+    public void removeGoldDistributionState(UUID gameRoomId) {
+        wrapperCall(() -> goldDistributionSession.remove(gameRoomId));
     }
 }

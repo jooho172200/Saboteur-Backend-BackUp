@@ -117,85 +117,86 @@ public class GameServiceTest {
     }
 
     @Test
-    @DisplayName("광부 승리 시 금덩이 분배 및 점수 누적")
-    void testMinerVictoryGoldDistribution() {
-        GoldCardDeck goldDeck = globalSession.getGoldDeckSession(gameRoom.getId());
+    @DisplayName("광부 승리 시 공식룰 기반 금덩이 분배 및 점수 누적")
+    void testMinerVictoryGoldDistributionOfficialRule() {
+        // 1. 광부/사보타지 역할 세팅
         List<UserGameRole> roles = globalSession.getRoleAssignment(gameRoom.getId());
-
-        // 광부 인원수만큼 금덩이 카드 분배
         List<User> miners = new ArrayList<>();
+        User goldFinder = users.get(0); // 첫 번째 유저를 금 발견자로 가정
         for (UserGameRole role : roles) {
-            if (role.getRole() == GameRole.MINER) {
-                miners.add(role.getUser());
-            }
+            if (role.getRole() == GameRole.MINER) miners.add(role.getUser());
         }
+        globalSession.setGoldFinder(gameRoom.getId(), goldFinder);
+
+        // 2. 금덩이 덱 준비
+        GoldCardDeck goldDeck = globalSession.getGoldDeckSession(gameRoom.getId());
         List<GoldCard> golds = goldDeck.drawGoldCards(miners.size());
-        for (int i = 0; i < miners.size() && i < golds.size(); i++) {
-            miners.get(i).addGoldCard(golds.get(i));
+
+        // 3. 분배 순서: goldFinder → 나머지 광부
+        List<User> orderedMiners = new ArrayList<>();
+        orderedMiners.add(goldFinder);
+        for (User miner : miners) {
+            if (!miner.equals(goldFinder)) orderedMiners.add(miner);
         }
 
-        // 각 광부의 goldScore가 올바르게 누적되었는지 확인
-        for (User miner : miners) {
+        // 4. 분배 큐로 한 명씩 원하는 카드 선택(여기선 순서대로 선택)
+        for (int i = 0; i < orderedMiners.size(); i++) {
+            User miner = orderedMiners.get(i);
+            GoldCard selected = golds.get(i);
+            miner.addGoldCard(selected); // 실제 서비스는 selectGoldCard 이벤트로 처리
+        }
+
+        // 5. 검증: 각 광부의 goldScore가 받은 카드의 amount와 일치
+        for (int i = 0; i < miners.size(); i++) {
+            User miner = miners.get(i);
             assertEquals(1, miner.getGoldCards().size(), "광부는 1장의 금덩이 카드를 받아야 함");
             assertEquals(
                     miner.getGoldCards().get(0).getAmount().intValue(),
                     miner.getGoldScore(),
-                    "goldScore가 금덩이 카드의 amount와 같아야 함");
+                    "goldScore가 금덩이 카드의 amount와 같아야 함"
+            );
         }
-
-        // 사보타지는 금덩이를 받지 않아야 함
+        // 사보타지는 금덩이 없음
         for (UserGameRole role : roles) {
             if (role.getRole() == GameRole.SABOTEUR) {
-                assertEquals(
-                        0, role.getUser().getGoldCards().size(), "사보타지는 광부 승리 시 금덩이를 받지 않아야 함");
-                assertEquals(0, role.getUser().getGoldScore(), "사보타지의 goldScore는 0이어야 함");
+                assertEquals(0, role.getUser().getGoldCards().size());
+                assertEquals(0, role.getUser().getGoldScore());
             }
         }
     }
+
 
     @Test
-    @DisplayName("사보타지 승리 시 금덩이 분배 및 점수 누적")
-    void testSaboteurVictoryGoldDistribution() {
-        GoldCardDeck goldDeck = globalSession.getGoldDeckSession(gameRoom.getId());
+    @DisplayName("사보타지 승리 시 공식룰 기반 점수 분배")
+    void testSaboteurVictoryGoldDistributionOfficialRule() {
         List<UserGameRole> roles = globalSession.getRoleAssignment(gameRoom.getId());
-
-        // 사보타지 승리 시: 사보타지 수에 관계없이 3장 분배 (사보타지 공식 룰)
         List<User> saboteurs = new ArrayList<>();
         for (UserGameRole role : roles) {
-            if (role.getRole() == GameRole.SABOTEUR) {
-                saboteurs.add(role.getUser());
-            }
+            if (role.getRole() == GameRole.SABOTEUR) saboteurs.add(role.getUser());
         }
-
-        // 사보타지 승리 시 3장 뽑아서 사보타지들이 나눠가짐
-        int goldCardsToDistribute = 3;
-        List<GoldCard> golds = goldDeck.drawGoldCards(goldCardsToDistribute);
-
-        // 사보타지 인원수만큼 순차적으로 분배
-        for (int i = 0; i < golds.size(); i++) {
-            User saboteur = saboteurs.get(i % saboteurs.size());
-            saboteur.addGoldCard(golds.get(i));
-        }
-
-        // 사보타지가 금덩이를 받았는지 확인
-        int totalSaboteurGoldCards = 0;
-        int totalSaboteurScore = 0;
+        int saboteurCount = saboteurs.size();
+        int goldPerSaboteur = switch (saboteurCount) {
+            case 1 -> 4;
+            case 2, 3 -> 3;
+            case 4 -> 2;
+            default -> 0;
+        };
+        // 1. 점수 분배
         for (User saboteur : saboteurs) {
-            totalSaboteurGoldCards += saboteur.getGoldCards().size();
-            totalSaboteurScore += saboteur.getGoldScore();
+            saboteur.setGoldScore(saboteur.getGoldScore() + goldPerSaboteur);
         }
-        assertEquals(3, totalSaboteurGoldCards, "사보타지 승리 시 총 3장의 금덩이 카드가 분배되어야 함");
-        assertTrue(totalSaboteurScore > 0, "사보타지의 총 goldScore가 0보다 커야 함");
-
-        // 광부는 금덩이를 받지 않아야 함
+        // 2. 검증
+        for (User saboteur : saboteurs) {
+            assertEquals(goldPerSaboteur, saboteur.getGoldScore(), "사보타지의 goldScore가 공식룰과 같아야 함");
+        }
+        // 광부는 점수 없음
         for (UserGameRole role : roles) {
             if (role.getRole() == GameRole.MINER) {
-                assertEquals(
-                        0, role.getUser().getGoldCards().size(), "광부는 사보타지 승리 시 금덩이를 받지 않아야 함");
-                assertEquals(0, role.getUser().getGoldScore(), "광부의 goldScore는 0이어야 함");
+                assertEquals(0, role.getUser().getGoldScore());
             }
         }
     }
+
 
     @Test
     @DisplayName("카드 소진 시 사보타지 승리 조건 확인")

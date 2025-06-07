@@ -12,24 +12,19 @@ import com.goldstone.saboteur_backend.domain.game.GoldCardDeck;
 import com.goldstone.saboteur_backend.domain.mapping.UserGameRole;
 import com.goldstone.saboteur_backend.domain.user.User;
 import com.goldstone.saboteur_backend.domain.user.UserCardDeck;
-import com.goldstone.saboteur_backend.dtos.game.request.DiscardCardRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.GetGameStateRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.NextTurnRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.PlayCardRequestDto;
+import com.goldstone.saboteur_backend.dtos.game.request.*;
 import com.goldstone.saboteur_backend.dtos.game.response.GetGameStateResponseDto;
 import com.goldstone.saboteur_backend.dtos.game.response.NextTurnResponseDto;
 import com.goldstone.saboteur_backend.dtos.game.response.PlayCardResponseDto;
+import com.goldstone.saboteur_backend.dtos.game.response.SelectGoldCardResponseDto;
 import com.goldstone.saboteur_backend.exception.BusinessException;
 import com.goldstone.saboteur_backend.exception.code.error.GameRoomErrorCode;
 import com.goldstone.saboteur_backend.exception.code.error.UserErrorCode;
 import com.goldstone.saboteur_backend.service.board.BoardService;
 import com.goldstone.saboteur_backend.session.GlobalSession;
 import com.goldstone.saboteur_backend.socketIo.SocketIoService;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -73,12 +68,13 @@ public class GameServiceImpl implements GameHandleService {
     private void broadcastGameEnded(GameRoom gameRoom) {
         List<UserGameRole> roles = globalSession.getRoleAssignment(gameRoom.getId());
         if (roles == null) return;
-        Map<UUID, String> roleMap = new HashMap<>();
-        for (UserGameRole role : roles) {
-            roleMap.put(role.getUser().getId(), role.getRole().name());
-        }
+        Map<UUID, String> roleMap =
+                roles.stream()
+                        .collect(
+                                Collectors.toMap(
+                                        role -> role.getUser().getId(),
+                                        role -> role.getRole().name()));
 
-        // 승리 팀 판단
         Board board = this.globalSession.getGameBoardSession(gameRoom.getId());
         if (board == null) {
             throw new BusinessException(GameRoomErrorCode.GAME_BOARD_NOT_FOUND);
@@ -86,27 +82,123 @@ public class GameServiceImpl implements GameHandleService {
         boolean isMinerVictory = !boardService.getReachableGoals(board).isEmpty();
         String winningTeam = isMinerVictory ? "MINER" : "SABOTEUR";
 
-        // 금덩이 분배
         GoldCardDeck goldDeck = globalSession.getGoldDeckSession(gameRoom.getId());
-        if (goldDeck != null && isMinerVictory) {
-            List<User> miners = new ArrayList<>();
-            for (UserGameRole role : roles) {
-                if (role.getRole() == GameRole.MINER) {
-                    miners.add(role.getUser());
-                }
-            }
-            List<GoldCard> golds = goldDeck.drawGoldCards(miners.size());
-            for (int i = 0; i < miners.size() && i < golds.size(); i++) {
-                miners.get(i).addGoldCard(golds.get(i));
+        if (goldDeck != null) {
+            if (isMinerVictory) {
+                distributeGoldToMiners(gameRoom, roles, goldDeck);
+            } else {
+                distributeGoldToSaboteurs(roles);
             }
         }
-
-        // 결과 브로드캐스트 (역할, 승리팀, 메시지 등)
         Map<String, Object> result = new HashMap<>();
         result.put("roles", roleMap);
         result.put("winningTeam", winningTeam);
         result.put("message", "게임이 종료되었습니다.");
         socketIoService.sendBroadCast(gameRoom.getId(), "gameEnded", result);
+    }
+
+    // 광부 분배: 금 발견자 → 턴 순서대로 원하는 금 카드 선택
+    private void distributeGoldToMiners(
+            GameRoom gameRoom, List<UserGameRole> roles, GoldCardDeck goldDeck) {
+        User goldFinder = globalSession.getGoldFinder(gameRoom.getId());
+        if (goldFinder == null) return;
+
+        List<User> miners =
+                roles.stream()
+                        .filter(role -> role.getRole() == GameRole.MINER)
+                        .map(UserGameRole::getUser)
+                        .toList();
+        if (miners.isEmpty()) return;
+
+        List<User> orderedMiners = new ArrayList<>();
+        orderedMiners.add(goldFinder);
+        GameTurnManager turnManager = globalSession.getTurnManagerSession(gameRoom.getId());
+        for (User user : turnManager.getTurnOrder()) {
+            if (miners.contains(user) && !user.equals(goldFinder)) {
+                orderedMiners.add(user);
+            }
+        }
+
+        List<GoldCard> golds = goldDeck.drawGoldCards(miners.size());
+
+        GoldDistributionState state = new GoldDistributionState();
+        state.minerQueue = new LinkedList<>(orderedMiners);
+        state.availableGoldCards = new ArrayList<>(golds);
+        globalSession.setGoldDistributionState(gameRoom.getId(), state);
+
+        requestGoldCardSelection(gameRoom.getId());
+    }
+
+    private void requestGoldCardSelection(UUID gameRoomId) {
+        GoldDistributionState state = globalSession.getGoldDistributionState(gameRoomId);
+        if (state == null || state.minerQueue.isEmpty() || state.availableGoldCards.isEmpty()) {
+            globalSession.removeGoldDistributionState(gameRoomId);
+            return;
+        }
+        User currentMiner = state.minerQueue.peek();
+        socketIoService.sendEventToUser(
+                currentMiner.getId(),
+                "selectGoldCard",
+                Map.of("availableGoldCards", state.availableGoldCards));
+        scheduleGoldCardAutoSelect(gameRoomId, currentMiner.getId());
+    }
+
+    public void handleGoldCardSelection(UUID gameRoomId, UUID userId, UUID selectedGoldCardId) {
+        GoldDistributionState state = globalSession.getGoldDistributionState(gameRoomId);
+        if (state == null) return;
+        User currentMiner = state.minerQueue.peek();
+        if (currentMiner == null || !currentMiner.getId().equals(userId)) return;
+
+        GoldCard selectedCard =
+                state.availableGoldCards.stream()
+                        .filter(card -> card.getId().equals(selectedGoldCardId))
+                        .findFirst()
+                        .orElse(null);
+        if (selectedCard == null) return;
+
+        currentMiner.addGoldCard(selectedCard);
+        state.availableGoldCards.remove(selectedCard);
+        state.minerQueue.poll();
+        requestGoldCardSelection(gameRoomId);
+    }
+
+    private void scheduleGoldCardAutoSelect(UUID gameRoomId, UUID userId) {
+        new Thread(
+                        () -> {
+                            try {
+                                Thread.sleep(10_000); // 10초 타임아웃
+                                GoldDistributionState state =
+                                        globalSession.getGoldDistributionState(gameRoomId);
+                                if (state == null) return;
+                                User currentMiner = state.minerQueue.peek();
+                                if (currentMiner == null || !currentMiner.getId().equals(userId))
+                                    return;
+                                GoldCard autoSelected = state.availableGoldCards.get(0);
+                                handleGoldCardSelection(gameRoomId, userId, autoSelected.getId());
+                            } catch (InterruptedException e) {
+                                Thread.currentThread().interrupt();
+                            }
+                        })
+                .start();
+    }
+
+    private void distributeGoldToSaboteurs(List<UserGameRole> roles) {
+        List<User> saboteurs =
+                roles.stream()
+                        .filter(role -> role.getRole() == GameRole.SABOTEUR)
+                        .map(UserGameRole::getUser)
+                        .toList();
+        int saboteurCount = saboteurs.size();
+        int goldPerSaboteur =
+                switch (saboteurCount) {
+                    case 1 -> 4;
+                    case 2, 3 -> 3;
+                    case 4 -> 2;
+                    default -> 0;
+                };
+        for (User saboteur : saboteurs) {
+            saboteur.setGoldScore(saboteur.getGoldScore() + goldPerSaboteur);
+        }
     }
 
     @Override
@@ -295,6 +387,59 @@ public class GameServiceImpl implements GameHandleService {
             return responseDto;
         } catch (Exception e) {
             client.sendEvent("error", e.getMessage());
+            throw e;
+        }
+    }
+
+    @Override
+    public SelectGoldCardResponseDto selectGoldCard(
+            SocketIOClient client, SelectGoldCardRequestDto dto) throws Exception {
+        try {
+            GoldDistributionState state =
+                    globalSession.getGoldDistributionState(dto.getGameRoomId());
+            if (state == null) {
+                throw new Exception("금덩이 분배가 진행 중이지 않습니다.");
+            }
+            User currentMiner = state.minerQueue.peek();
+            if (currentMiner == null || !currentMiner.getId().equals(dto.getUserId())) {
+                throw new Exception("잘못된 차례입니다.");
+            }
+
+            GoldCard selectedCard =
+                    state.availableGoldCards.stream()
+                            .filter(card -> card.getId().equals(dto.getSelectedGoldCardId()))
+                            .findFirst()
+                            .orElseThrow(() -> new Exception("선택한 금덩이 카드를 찾을 수 없습니다."));
+
+            currentMiner.addGoldCard(selectedCard);
+            state.availableGoldCards.remove(selectedCard);
+            state.minerQueue.poll();
+
+            List<UUID> remainingCardIds =
+                    state.availableGoldCards.stream().map(GoldCard::getId).toList();
+            UUID nextPlayerId =
+                    !state.minerQueue.isEmpty() ? state.minerQueue.peek().getId() : null;
+
+            if (nextPlayerId != null) {
+                requestGoldCardSelection(dto.getGameRoomId());
+            } else {
+                globalSession.removeGoldDistributionState(dto.getGameRoomId());
+            }
+
+            SelectGoldCardResponseDto responseDto = new SelectGoldCardResponseDto();
+            responseDto.setSuccess(true);
+            responseDto.setMessage("금덩이 카드 선택 성공");
+            responseDto.setRemainingGoldCardIds(remainingCardIds);
+            responseDto.setNextPlayerUserId(nextPlayerId);
+
+            if (client != null) {
+                client.sendEvent("goldCardSelected", responseDto);
+            }
+            return responseDto;
+        } catch (Exception e) {
+            if (client != null) {
+                client.sendEvent("error", e.getMessage());
+            }
             throw e;
         }
     }

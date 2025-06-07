@@ -96,6 +96,8 @@ public class GameRoomServiceImpl implements GameRoomService {
         globalSession.removeGameBoardSession(gameRoomId);
         globalSession.removeTurnManagerSession(gameRoomId);
         globalSession.removeGameCardPoolSession(gameRoomId);
+        globalSession.removeGoldFinder(gameRoomId);
+        globalSession.removeGoldDistributionState(gameRoomId);
 
         // 2. 역할 분배
         GameRoleAssignment roleAssigner = new GameRoleAssignment();

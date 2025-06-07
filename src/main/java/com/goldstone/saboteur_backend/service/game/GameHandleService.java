@@ -1,13 +1,11 @@
 package com.goldstone.saboteur_backend.service.game;
 
 import com.corundumstudio.socketio.SocketIOClient;
-import com.goldstone.saboteur_backend.dtos.game.request.DiscardCardRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.GetGameStateRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.NextTurnRequestDto;
-import com.goldstone.saboteur_backend.dtos.game.request.PlayCardRequestDto;
+import com.goldstone.saboteur_backend.dtos.game.request.*;
 import com.goldstone.saboteur_backend.dtos.game.response.GetGameStateResponseDto;
 import com.goldstone.saboteur_backend.dtos.game.response.NextTurnResponseDto;
 import com.goldstone.saboteur_backend.dtos.game.response.PlayCardResponseDto;
+import com.goldstone.saboteur_backend.dtos.game.response.SelectGoldCardResponseDto;
 
 public interface GameHandleService {
     PlayCardResponseDto playCard(SocketIOClient client, PlayCardRequestDto dto) throws Exception;
@@ -18,5 +16,8 @@ public interface GameHandleService {
             throws Exception;
 
     PlayCardResponseDto discardCard(SocketIOClient client, DiscardCardRequestDto dto)
+            throws Exception;
+
+    SelectGoldCardResponseDto selectGoldCard(SocketIOClient client, SelectGoldCardRequestDto dto)
             throws Exception;
 }
