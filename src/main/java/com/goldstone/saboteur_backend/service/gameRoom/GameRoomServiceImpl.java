@@ -2,6 +2,7 @@ package com.goldstone.saboteur_backend.service.gameRoom;
 
 import com.corundumstudio.socketio.SocketIOClient;
 import com.goldstone.saboteur_backend.domain.board.Board;
+import com.goldstone.saboteur_backend.domain.card.Card;
 import com.goldstone.saboteur_backend.domain.game.*;
 import com.goldstone.saboteur_backend.domain.mapping.UserGameRole;
 import com.goldstone.saboteur_backend.domain.user.User;
@@ -14,6 +15,7 @@ import com.goldstone.saboteur_backend.exception.code.error.GameRoomErrorCode;
 import com.goldstone.saboteur_backend.exception.code.error.UserErrorCode;
 import com.goldstone.saboteur_backend.session.GlobalSession;
 import com.goldstone.saboteur_backend.socketIo.SocketIoService;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -73,6 +75,7 @@ public class GameRoomServiceImpl implements GameRoomService {
 
         gameRoom.addPlayer(user);
         client.joinRoom(gameRoom.getId().toString());
+        this.globalSession.addUserSocketId(user.getId(), client.getSessionId());
 
         return gameRoom;
     }
@@ -123,7 +126,18 @@ public class GameRoomServiceImpl implements GameRoomService {
                 newCardPool.assignCardsToUserDecks(gameRoom.getUserGameRooms(), cardPerPlayer);
 
         for (User user : userCardDecks.keySet()) {
+            UserCardDeck cardDeck = userCardDecks.get(user);
             user.setCardDeck(userCardDecks.get(user));
+
+            List<Card> cardList = new ArrayList<>();
+            for (Card card : cardDeck.getCards()) {
+                cardList.add(card);
+            }
+
+            System.out.println(cardDeck);
+            System.out.println(user.getCardDeck());
+
+            socketIoService.sendEventToUser(user.getId(), "yourCardDeck", cardList);
         }
     }
 }
