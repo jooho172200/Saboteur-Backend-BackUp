@@ -319,7 +319,7 @@ public class GameServiceImpl implements GameHandleService {
 
             User currentUser = turnManager.getCurrentTurnUser();
             Map<UUID, Integer> playerCardCounts = new HashMap<>();
-            List<UUID> myCardIds = new ArrayList<>();
+            List<Card> myCards = new ArrayList<>();
             UUID myUserId = currentUser.getId();
 
             for (var userGameRoom : gameRoom.getUserGameRooms()) {
@@ -328,7 +328,7 @@ public class GameServiceImpl implements GameHandleService {
                 playerCardCounts.put(user.getId(), deck != null ? deck.getCards().size() : 0);
                 if (user.getId().equals(myUserId) && deck != null) {
                     for (Card card : deck.getCards()) {
-                        myCardIds.add(card.getId());
+                        myCards.add(card);
                     }
                 }
             }
@@ -341,7 +341,7 @@ public class GameServiceImpl implements GameHandleService {
                             currentUser.getNickname(),
                             playerCardCounts,
                             cardPool.getCards().size(),
-                            myCardIds
+                            myCards
                             // , gameEnded // 필요하다면 DTO에 필드 추가
                             );
             client.sendEvent("gameState", responseDto);

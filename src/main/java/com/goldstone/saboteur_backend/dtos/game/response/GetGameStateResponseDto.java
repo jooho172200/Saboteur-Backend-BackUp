@@ -1,5 +1,6 @@
 package com.goldstone.saboteur_backend.dtos.game.response;
 
+import com.goldstone.saboteur_backend.domain.card.Card;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -17,5 +18,5 @@ public class GetGameStateResponseDto {
     private String currentPlayerName;
     private Map<UUID, Integer> playerCardCounts;
     private int cardPoolRemaining;
-    private List<UUID> myCardIds; // 내 손패 카드 id 목록
+    private List<Card> myCards; // 내 손패 카드 id 목록
 }
