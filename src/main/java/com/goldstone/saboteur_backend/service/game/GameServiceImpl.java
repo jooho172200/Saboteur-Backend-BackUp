@@ -124,6 +124,7 @@ public class GameServiceImpl implements GameHandleService {
         GoldDistributionState state = new GoldDistributionState();
         state.minerQueue = new LinkedList<>(orderedMiners);
         state.availableGoldCards = new ArrayList<>(golds);
+        state.distributionMiners = new ArrayList<>(orderedMiners);
         globalSession.setGoldDistributionState(gameRoom.getId(), state);
 
         requestGoldCardSelection(gameRoom.getId());
@@ -132,6 +133,7 @@ public class GameServiceImpl implements GameHandleService {
     private void requestGoldCardSelection(UUID gameRoomId) {
         GoldDistributionState state = globalSession.getGoldDistributionState(gameRoomId);
         if (state == null || state.minerQueue.isEmpty() || state.availableGoldCards.isEmpty()) {
+            broadcastGoldDistributionCompleted(gameRoomId, state);
             globalSession.removeGoldDistributionState(gameRoomId);
             return;
         }
@@ -201,6 +203,24 @@ public class GameServiceImpl implements GameHandleService {
         }
     }
 
+    private void broadcastGoldDistributionCompleted(UUID gameRoomId, GoldDistributionState state) {
+        if (state == null || state.distributionMiners == null) return;
+        List<Map<String, Object>> distributionResults = new ArrayList<>();
+        for (User miner : state.distributionMiners) {
+            for (GoldCard card : miner.getGoldCards()) {
+                Map<String, Object> entry = new HashMap<>();
+                entry.put("userId", miner.getId());
+                entry.put("goldCardId", card.getId());
+                entry.put("amount", card.getAmount());
+                distributionResults.add(entry);
+            }
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("message", "금덩이 분배가 완료되었습니다");
+        result.put("distributionResults", distributionResults);
+
+        socketIoService.sendBroadCast(gameRoomId, "goldDistributionCompleted", result);
+    }
     @Override
     public PlayCardResponseDto playCard(SocketIOClient client, PlayCardRequestDto dto)
             throws Exception {
@@ -423,6 +443,7 @@ public class GameServiceImpl implements GameHandleService {
             if (nextPlayerId != null) {
                 requestGoldCardSelection(dto.getGameRoomId());
             } else {
+                broadcastGoldDistributionCompleted(dto.getGameRoomId(), state);
                 globalSession.removeGoldDistributionState(dto.getGameRoomId());
             }
 
