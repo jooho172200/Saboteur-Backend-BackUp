@@ -134,9 +134,6 @@ public class GameRoomServiceImpl implements GameRoomService {
                 cardList.add(card);
             }
 
-            System.out.println(cardDeck);
-            System.out.println(user.getCardDeck());
-
             socketIoService.sendEventToUser(user.getId(), "yourCardDeck", cardList);
         }
     }
