@@ -145,25 +145,6 @@ public class GameServiceImpl implements GameHandleService {
         scheduleGoldCardAutoSelect(gameRoomId, currentMiner.getId());
     }
 
-    public void handleGoldCardSelection(UUID gameRoomId, UUID userId, UUID selectedGoldCardId) {
-        GoldDistributionState state = globalSession.getGoldDistributionState(gameRoomId);
-        if (state == null) return;
-        User currentMiner = state.minerQueue.peek();
-        if (currentMiner == null || !currentMiner.getId().equals(userId)) return;
-
-        GoldCard selectedCard =
-                state.availableGoldCards.stream()
-                        .filter(card -> card.getId().equals(selectedGoldCardId))
-                        .findFirst()
-                        .orElse(null);
-        if (selectedCard == null) return;
-
-        currentMiner.addGoldCard(selectedCard);
-        state.availableGoldCards.remove(selectedCard);
-        state.minerQueue.poll();
-        requestGoldCardSelection(gameRoomId);
-    }
-
     private void scheduleGoldCardAutoSelect(UUID gameRoomId, UUID userId) {
         new Thread(
                         () -> {
@@ -176,7 +157,11 @@ public class GameServiceImpl implements GameHandleService {
                                 if (currentMiner == null || !currentMiner.getId().equals(userId))
                                     return;
                                 GoldCard autoSelected = state.availableGoldCards.get(0);
-                                handleGoldCardSelection(gameRoomId, userId, autoSelected.getId());
+                                // 자동 선택용 autoDto 실제 값은 NULL
+                                SelectGoldCardRequestDto autoDto = new SelectGoldCardRequestDto();
+                                autoDto.setGameRoomId(gameRoomId);
+                                autoDto.setUserId(userId);
+                                autoDto.setSelectedGoldCardId(autoSelected.getId());
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                             }
@@ -221,6 +206,7 @@ public class GameServiceImpl implements GameHandleService {
 
         socketIoService.sendBroadCast(gameRoomId, "goldDistributionCompleted", result);
     }
+
     @Override
     public PlayCardResponseDto playCard(SocketIOClient client, PlayCardRequestDto dto)
             throws Exception {

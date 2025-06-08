@@ -153,8 +153,7 @@ public class GameServiceTest {
             assertEquals(
                     miner.getGoldCards().get(0).getAmount().intValue(),
                     miner.getGoldScore(),
-                    "goldScore가 금덩이 카드의 amount와 같아야 함"
-            );
+                    "goldScore가 금덩이 카드의 amount와 같아야 함");
         }
         // 사보타지는 금덩이 없음
         for (UserGameRole role : roles) {
@@ -165,7 +164,6 @@ public class GameServiceTest {
         }
     }
 
-
     @Test
     @DisplayName("사보타지 승리 시 공식룰 기반 점수 분배")
     void testSaboteurVictoryGoldDistributionOfficialRule() {
@@ -175,12 +173,13 @@ public class GameServiceTest {
             if (role.getRole() == GameRole.SABOTEUR) saboteurs.add(role.getUser());
         }
         int saboteurCount = saboteurs.size();
-        int goldPerSaboteur = switch (saboteurCount) {
-            case 1 -> 4;
-            case 2, 3 -> 3;
-            case 4 -> 2;
-            default -> 0;
-        };
+        int goldPerSaboteur =
+                switch (saboteurCount) {
+                    case 1 -> 4;
+                    case 2, 3 -> 3;
+                    case 4 -> 2;
+                    default -> 0;
+                };
         // 1. 점수 분배
         for (User saboteur : saboteurs) {
             saboteur.setGoldScore(saboteur.getGoldScore() + goldPerSaboteur);
@@ -196,7 +195,6 @@ public class GameServiceTest {
             }
         }
     }
-
 
     @Test
     @DisplayName("카드 소진 시 사보타지 승리 조건 확인")
