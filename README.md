@@ -19,8 +19,8 @@
 ## 기술 스택
 
 - Java 17 / Spring Boot 3 / JPA / MySQL
-- WebSocket (Socket.IO)
-- Gradle, Git
+- Netty.Socket.IO
+- Gradle
 
 ## 동기화 방법
 
